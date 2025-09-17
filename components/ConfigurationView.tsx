@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { ScheduleEvent, RawScheduleEvent } from '../types';
 import { parseDate, formatToStandardDateString } from '../services/dateUtils';
@@ -29,17 +29,21 @@ const emptyEvent: Omit<ScheduleEvent, 'id' | 'dateObject'> = {
 };
 
 const EventFormModal: React.FC<EventFormModalProps> = ({ isOpen, onClose, onSave, eventToEdit }) => {
-  const [formData, setFormData] = useState(emptyEvent);
+  const [formData, setFormData] = useState<Omit<ScheduleEvent, 'id' | 'dateObject'>>(emptyEvent);
   const [error, setError] = useState<string | null>(null);
 
-  useState(() => {
-    if (eventToEdit) {
-      setFormData(eventToEdit);
-    } else {
-      setFormData(emptyEvent);
+  // FIX: Replaced buggy useState initializer with useEffect to correctly populate the form
+  // when the modal opens or the event to edit changes.
+  useEffect(() => {
+    if (isOpen) {
+      if (eventToEdit) {
+        setFormData(eventToEdit);
+      } else {
+        setFormData(emptyEvent);
+      }
+      setError(null);
     }
-    setError(null);
-  });
+  }, [isOpen, eventToEdit]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -283,6 +287,12 @@ const ConfigurationView: React.FC<ConfigurationViewProps> = ({ events, setEvents
   const [fileName, setFileName] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<ScheduleEvent | null>(null);
+
+  // FIX: Added useEffect to synchronize the local component state with the main application state (props).
+  // This ensures that after saving, the configuration view accurately reflects the updated event list.
+  useEffect(() => {
+    setLocalEvents(events);
+  }, [events]);
 
   const handleExcelUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
