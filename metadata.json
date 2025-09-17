@@ -1,0 +1,5 @@
+{
+  "name": "CRONOGRAMA IENSECAN 2025",
+  "description": "An interactive web application to view, manage, and export the school's event schedule for IENSECAN. It displays the current day's activities or upcoming events, and allows for data updates and PDF exports.",
+  "requestFramePermissions": []
+}

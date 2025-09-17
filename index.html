@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cronograma IENSECAN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.1.1/client",
+    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.2",
+    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable@^5.0.2",
+    "xlsx": "https://aistudiocdn.com/xlsx@^0.18.5",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/"
+  }
+}
+</script>
+    <style>
+      @media print {
+        body {
+          background-color: #fff !important;
+        }
+        header, footer, .no-print {
+          display: none !important;
+        }
+        main {
+          padding: 0 !important;
+          margin: 0 !important;
+          max-width: 100% !important;
+        }
+        .schedule-view-container {
+          display: block !important;
+        }
+        .calendar-container {
+          display: none !important;
+        }
+        .event-list-container {
+          width: 100% !important;
+          padding: 0 !important;
+        }
+        .printable-area, .event-card-container {
+          box-shadow: none !important;
+          border: 1px solid #e2e8f0 !important;
+        }
+        .event-card-container {
+            page-break-inside: avoid;
+        }
+      }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+    <script type="module">
+        import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import jsPDF from 'jspdf';
+        import 'jspdf-autotable';
+        import * as XLSX from 'xlsx';
+
+        // --- From services/dateUtils.ts ---
+        const spanishMonths = {
+          'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3, 'mayo': 4, 'junio': 5,
+          'julio': 6, 'agosto': 7, 'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
+        };
+
+        const parseDate = (dateString) => {
+          if (!dateString) return null;
+          const parts = dateString.trim().toLowerCase().replace(/\s+de\s+/g, ' ').split(/\s+/);
+          if (parts.length < 3) {
+              console.warn(`Invalid date format (not enough parts): "${dateString}"`);
+              return null;
+          }
+          const day = parseInt(parts[0], 10);
+          const monthName = parts[1];
+          const year = parseInt(parts[parts.length - 1], 10);
+          const month = spanishMonths[monthName.replace(/,/g, '')];
+          if (isNaN(day) || month === undefined || isNaN(year)) {
+            console.warn(`Invalid date format (could not parse day, month, or year): "${dateString}"`);
+            return null;
+          }
+          return new Date(Date.UTC(year, month, day));
+        };
+
+        const formatDate = (date) => {
+          if (!date || isNaN(date.getTime())) return '';
+          return date.toLocaleDateString('es-CO', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+          });
+        };
+        
+        const monthNamesSpanish = [
+          "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ];
+
+        const formatToStandardDateString = (date) => {
+            if (!date || isNaN(date.getTime())) return '';
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = monthNamesSpanish[date.getUTCMonth()];
+            const year = date.getUTCFullYear();
+            return `${day} ${month} ${year}`;
+        };
+
+        // --- From services/scheduleData.ts ---
+        const initialScheduleData = [
+          { fecha: "01 Septiembre 2025", dia: "Lunes", hora: "Jornada escolar", lugar: "Sedes", actividad: "Olimpiadas de Matemáticas", participan: "Docentes áreas matemáticas", observaciones: "Fecha cronograma institucional" },
+          { fecha: "01 Septiembre 2025", dia: "Lunes", hora: "Jornada escolar", lugar: "Sedes", actividad: "Entrevista laboral", participan: "Docentes área técnica", observaciones: "Fecha cronograma institucional" },
+          { fecha: "01 Septiembre 2025", dia: "Lunes", hora: "10:00 am- 2:00 pm", lugar: "Sede General Santander", actividad: "Alianza para la transformación de la educación media", participan: "Equipo gestor, María Fernanda Medina, etc.", observaciones: "Nombres: Maribell Paredes, Neyla García, etc. Teléfono: 3165315246" },
+          { fecha: "01 Septiembre 2025", dia: "Lunes", hora: "3:00 pm", lugar: "Sede Sagrada Familia", actividad: "Club de ajedrez", participan: "Coordinadores, docentes, estudiantes", observaciones: "Lic. Cesar Tulio Layton Henao" },
+          { fecha: "02 Septiembre 2025", dia: "Martes", hora: "9:00 am.", lugar: "Escuela de música de Candelaria", actividad: "Proyección del 'CINE FORO LEGADO MEMORIA VIVA EN PANTALLA'", participan: "Docentes Etno-educadores y/o docentes del área afro.", observaciones: "Invitados especiales: Zumaya Mayers Caicedo y Rodrigo Cuervo Jiménez. Reconocimientos: Premio India Catalina 2025, Premio LASA Award of Merit in Film 2025." },
+          { fecha: "02 Septiembre 2025", dia: "Martes", hora: "10:30 am - 1:30 pm", lugar: "Sede General Santander Sala de sistemas", actividad: "Reunión comité de inclusión – Política de inclusión", participan: "Integrantes comité, Lina María Ballesteros Molina, Coordinadores", observaciones: "" },
+          { fecha: "03 Septiembre 2025", dia: "Miércoles", hora: "6:30 am - 8:30 am", lugar: "Sala de sistemas sede General Santander", actividad: "Articulación de los proyectos pedagógicos transversales con los centros de interés propios.", participan: "Docentes comité de área – Educación física recreación y deportes", observaciones: "Avanzar en la armonización y articulación curricular." },
+          { fecha: "03 Septiembre 2025", dia: "Miércoles", hora: "8:30 am - 10:30 am", lugar: "Sala de sistemas sede General Santander", actividad: "Identificación de aprendizajes y fortalecimiento de acciones desarrolladas.", participan: "Lina María Ballesteros Molina, Victoria Eugenia Zúñiga Torres, Coordinadores", observaciones: "Fortaleciendo la implementación de la ruta del PTAFI 2025." },
+          { fecha: "03 Septiembre 2025", dia: "Miércoles", hora: "8:30 am", lugar: "Auditorio Zoológico de Cali", actividad: "Lanzamiento revistas: 'Somos ECOPANITAS del PARAÍSO' y 'CESPEDESIA'", participan: "Luis Ernesto Giraldo Zapata", observaciones: "Organizado por la Gobernación del Valle del Cauca e INCIVA." },
+          { fecha: "03 Septiembre 2025", dia: "Miércoles", hora: "9:00 am", lugar: "Sede administrativa Google. Meet.", actividad: "Seguimiento de los Planes de Mejoramiento 2023 y 2024", participan: "Alexander Bravo Chaparro, Harvy Santiago Peña Soto", observaciones: "Contacto: Carolina Salguero Orozco, Celular: 3136285901" },
+          { fecha: "03 Septiembre 2025", dia: "Miércoles", hora: "6:00 pm - 7:00 pm", lugar: "Virtual", actividad: "Webinario sobre herramientas tiflotecnologías (Manejo de MS Word, Excel, PowerPoint y navegadores con Jaws)", participan: "Docentes inscritos", observaciones: "Para estudiantes ciegos y con baja visión. Organizado por CONALIVI." },
+          { fecha: "04 Septiembre 2025", dia: "Jueves", hora: "8:00 am - 12 m", lugar: "Hotel Guadalajara de Buga", actividad: "Encuentro de formación centralizada, Alianza para la transformación de la educación media", participan: "Maribell Paredes Gallego, Neyla María García Núñez, etc.", observaciones: "ENCUENTRO EQUIPO EDU MEDIA. Contacto: MARÍA FERNANDA MEDINA, Teléfono: 3165315246" },
+          { fecha: "05 Septiembre 2025", dia: "Viernes", hora: "6:30 am - 8:30 am", lugar: "Sede Sagrada Familia", actividad: "Reuniones de Seguimiento del Consejo Estudiantil, Personero y Contralor Escolar", participan: "Rubén Darío Caicedo Sinisterra, Neyla María García Núñez", observaciones: "" },
+          { fecha: "05 Septiembre 2025", dia: "Viernes", hora: "Pendiente", lugar: "Sede Sagrada Familia", actividad: "Dia del Egresado", participan: "Alexander Bravo Chaparro", observaciones: "Fecha cronograma institucional" },
+          { fecha: "08 Septiembre 2025", dia: "Lunes", hora: "Jornada escolar", lugar: "Sedes", actividad: "Semana por la Paz", participan: "Docentes, Coordinadores", observaciones: "Fecha cronograma institucional" },
+          { fecha: "08 Septiembre 2025", dia: "Lunes", hora: "11 am", lugar: "Sede administrativa", actividad: "Reunión comité de convivencia", participan: "Integrantes comité", observaciones: "PLAN INSTITUCIONAL DE CONVIVENCIA ESCOLAR (PICE)" },
+          { fecha: "08 Septiembre 2025", dia: "Lunes", hora: "10 am", lugar: "Face Live secretaria de educación departamental", actividad: "Comunicación efectiva y empatía", participan: "Directivos, docentes, orientadores y familias", observaciones: "Webinars sobre el módulo de formación Crianza Respetuosa." },
+          { fecha: "08 Septiembre 2025", dia: "Lunes", hora: "3:00 pm", lugar: "Sede Sagrada Familia", actividad: "Club de ajedrez", participan: "Coordinadores, docentes, estudiantes", observaciones: "Lic. Cesar Tulio Layton Henao" },
+          { fecha: "09 Septiembre 2025", dia: "Martes", hora: "8:00 am - 12:00 m", lugar: "Lab-Point El Cerrito - IE Jorge Isaac El Placer", actividad: "Capacitación -habilidades socioemocionales y ambientes escolares seguros", participan: "Neyla María García Núñez, Rubén Darío Caicedo Sinisterra", observaciones: "Fortalecimiento de la convivencia escolar." },
+          { fecha: "09 Septiembre 2025", dia: "Martes", hora: "8:00 am", lugar: "Escuela de la Música, Cabecera Municipal", actividad: "Conversatorio 'Familia y participación: bases de la transformación social'", participan: "Alma Nuria Coll, Personero(A) Estudiantil, Contralores Estudiantiles", observaciones: "Contacto: Yurid Marcela Mora Josa, Celular: 3105180529" },
+          { fecha: "09 Septiembre 2025", dia: "Martes", hora: "Jornada escolar", lugar: "Sedes", actividad: "La educación abraza la Memoria y la Reconciliación", participan: "Coordinadores y docentes", observaciones: "Descargar guías en https://linktr.ee/educapazcolombia" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "6:30 am - 1:30 pm", lugar: "Sede Administrativa", actividad: "Revisión cumplimiento del módulo de seguimiento - plan de mejoramiento 2025", participan: "Alexander Bravo Chaparro, Johana María Jiménez, etc.", observaciones: "Requerimiento SED – Circular Interna No. 2023286024" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "Jornada escolar", lugar: "Sede Santo Domingo Savio", actividad: "Exposición - taller: Proyecto de prevención y atención en desastres, Tema: terremotos", participan: "GRUPO 01, Zharith Daniela Champutiz", observaciones: "Docentes áreas matemáticas" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "Jornada escolar", lugar: "Sede Alfonso López Pumarejo", actividad: "Exposición - taller: Proyecto de prevención y atención en desastres, Tema: terremotos", participan: "GRUPO 02, Lonny Manyoma", observaciones: "Docentes áreas matemáticas" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "7:00 am-12:00 pm", lugar: "Sede Sagrada Familia", actividad: "Acciones Educativas con la estrategia 'No Estas Solo'", participan: "Estudiantes - grados noveno, décimo y undécimo", observaciones: "Conmemoración del Día de la Prevención del Suicidio. Contacto: 315 8439171" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "9:00 am-12:00 m", lugar: "Colegio Providencia- El Placer- El Cerrito", actividad: "Taller -Educación Financiera", participan: "Maribell Paredes Gallego, Efraín Hernando Cárdenas Buitrago, Mónica Ospina Duran", observaciones: "" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "2:00 pm-4:00 pm", lugar: "Google - Meet", actividad: "Conversatorio sobre las violencias por razones de sexo y género en el ámbito laboral", participan: "PERSONAL ADMINISTRATIVO", observaciones: "Asistencia obligatoria. Enlace: http://meet.google.com/njc-fyor-sop" },
+          { fecha: "10 Septiembre 2025", dia: "Miércoles", hora: "4:00 pm - 5.30 pm", lugar: "Microsoft Teams", actividad: "Proyecto de vida como dispositivo metodológico", participan: "Directivos, Docentes, Equipo gestor educación media", observaciones: "Organizado por la Secretaría de Educación y ATEM." },
+          { fecha: "11 Septiembre 2025", dia: "Jueves", hora: "7:30 am - 12:30 m", lugar: "Escuela Normal Superior Jorge Isaacs", actividad: "XIX Simposio de Investigación y Pedagogía: 'Investigación, Creatividad y Aula Viva'", participan: "Docentes tecnología e informática", observaciones: "" },
+          { fecha: "11 Septiembre 2025", dia: "Jueves", hora: "7:30 am - 12:30 m", lugar: "Sede principal I.E. Panebianco Americano, Candelaria", actividad: "Foro 'El papel de la escuela en la consolidación de una paz estable y duradera'", participan: "Rectora, coordinador, docente, orientador escolar, personero estudiantil", observaciones: "Con presencia de funcionarios de la JEP." },
+          { fecha: "12 Septiembre 2025", dia: "Viernes", hora: "7:00 am", lugar: "Sede Antonio Nariño", actividad: "Sensibilización SENA - estrategia de Articulación - programas ofertados", participan: "Grupos grado noveno", observaciones: "" },
+          { fecha: "15 Septiembre 2025", dia: "Lunes", hora: "3:00 pm", lugar: "Sede Sagrada Familia", actividad: "Club de ajedrez", participan: "Coordinadores, docentes, estudiantes", observaciones: "Lic. Cesar Tulio Layton Henao" },
+          { fecha: "16 Septiembre 2025", dia: "Martes", hora: "8:00am - 2:00 pm", lugar: "Lab-Point El Cerrito - IE Jorge Isaac El Placer", actividad: "Taller innovación e impacto en el aula - herramientas tecnológicas", participan: "Fernando Ochoa Castro, Cesar Tulio Layton Henao", observaciones: "Fomentar el uso de herramientas tecnológicas. Circular No. 2025036854" },
+          { fecha: "16 Septiembre 2025", dia: "Martes", hora: "8:00 am - 5:00 pm", lugar: "Orquideorama, Av 2 Norte # 48 Barrio Olaya Herrera", actividad: "III Cumbre departamental de contralores estudiantiles del Valle del Cauca 2025", participan: "Contralor estudiantil, Docente acompañante", observaciones: "Confirmar asistencia a laurarivera@contraloriavalledelcauca.gov.co" },
+          { fecha: "17 Septiembre 2025", dia: "Miércoles", hora: "8:00 am – 11:00 am", lugar: "Nuestra Señora de la Candelaria, Sagrada Familia y Antonio Nariño.", actividad: "'Candelaria en el Mapa' - Actividades culturales, deportivas, formativas y recreativas", participan: "Grados 8°, 9°, 10º y 11°", observaciones: "Coordinador: JUAN FELIPE LASSO LARRAHONDO" },
+          { fecha: "18 Septiembre 2025", dia: "Jueves", hora: "7:30 am", lugar: "Diócesis de Palmira Seminario Cristo Sacerdote", actividad: "Reunión rectores- Florida, Pradera, El Cerrito Ginebra y Candelaria.", participan: "Rectores", observaciones: "Presentes: Monseñor Rodrigo Gallego Trujillo, Dr. Diego Pardo." },
+          { fecha: "18 Septiembre 2025", dia: "Jueves", hora: "8:00 am", lugar: "Parroquia", actividad: "Eucaristía", participan: "Docentes y estudiantes sede Santo Domingo Savio", observaciones: "Coordinador y docentes" },
+          { fecha: "19 Septiembre 2025", dia: "Viernes", hora: "8:00 am", lugar: "Ciudad del campo", actividad: "Encuentro SUTEV – feria de vivienda", participan: "Directivos docentes y docentes", observaciones: "" },
+          { fecha: "22 Septiembre 2025", dia: "Lunes", hora: "Jornada escolar", lugar: "Sedes", actividad: "Preparación Open House Transición", participan: "Coordinadores, docentes.", observaciones: "Semana del 22 al 26" },
+          { fecha: "23 Septiembre 2025", dia: "Martes", hora: "8:30 am – 1:30 pm", lugar: "Sede Antonio Nariño", actividad: "Encuentro docentes - sensibilización proceso inclusión - básica secundaria y media", participan: "Martha Patricia Meza Pastrana, Isabel Cristina León Aponte", observaciones: "" },
+          { fecha: "24 Septiembre 2025", dia: "Miércoles", hora: "2:00 pm - 4:00 pm", lugar: "Google - Meet", actividad: "Clausura del ciclo de formación", participan: "PERSONAL ADMINISTRATIVO", observaciones: "Enlace: http://meet.google.com/njc-fyor-sop" },
+          { fecha: "25 Septiembre 2025", dia: "Jueves", hora: "7:00 am", lugar: "Parroquia", actividad: "Eucaristía", participan: "Docentes y estudiantes sede Sagrada Familia", observaciones: "Lic. - Fabiola Mosquera Calderón" },
+          { fecha: "26 Septiembre 2025", dia: "Viernes", hora: "9:00 am - 10:00 am", lugar: "Virtual Meet", actividad: "Capacitación estrategia disminución abstención electoral CMJ 2025 - VALLE VOTA JOVEN", participan: "Coordinadores", observaciones: "Link: https://meet.google.com/ajx-ezxp-dne" },
+          { fecha: "01 Octubre 2025", dia: "Miércoles", hora: "7:00 am – 9:00 am", lugar: "Sede General Santander – sala de sistemas", actividad: "Seguimiento a la implementación del Programa de Educación para la Sexualidad (PESCC)", participan: "Coordinadores, Docentes proyecto Educación sexual", observaciones: "Diego Castañeda - Fundación Ave Fénix. Telf.: 3161000995" },
+          { fecha: "02 Octubre 2025", dia: "Jueves", hora: "7:00 am", lugar: "Por confirmar", actividad: "Jornada pedagógica nacional de la inteligencia artificial", participan: "Nelson Muñoz, Yenny Marcela Diaz Rosero, Julián González Sánchez", observaciones: "" },
+          { fecha: "17 Octubre 2025", dia: "Viernes", hora: "8:30 am", lugar: "Sede administrativa", actividad: "Seguimiento y evaluación - Proyectos y Programas especiales", participan: "Rubén Darío Caicedo S, Integrantes consejo directivo - consejo académico", observaciones: "Evaluación y socialización Comparsa final de año" },
+          { fecha: "20 Octubre 2025", dia: "Lunes", hora: "10 am", lugar: "Face Live secretaria de educación departamental", actividad: "Límites claros y disciplina positiva", participan: "Directivos, docentes, orientadores y familias", observaciones: "Webinars sobre el módulo de formación Crianza Respetuosa" },
+          { fecha: "26 Noviembre 2025", dia: "Miércoles", hora: "8:30 am", lugar: "Sede administrativa", actividad: "Cierre fin de año – presupuesto", participan: "Integrantes consejo directivo - contadora", observaciones: "" }
+        ];
+
+        // --- From services/authService.ts ---
+        const USERS_STORAGE_KEY = 'cronograma_iensecan_users';
+        const getDefaultUser = () => ({ username: 'admin', password: 'Iensecan2025*' });
+
+        const initializeUsers = () => {
+          if (!localStorage.getItem(USERS_STORAGE_KEY)) {
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify([getDefaultUser()]));
+          }
+        };
+
+        const getUsers = () => {
+          const usersJson = localStorage.getItem(USERS_STORAGE_KEY);
+          return usersJson ? JSON.parse(usersJson) : [];
+        };
+
+        const saveUsers = (users) => {
+          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+        };
+
+        const login = (username, password) => {
+          const users = getUsers();
+          const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+          if (user) {
+            sessionStorage.setItem('loggedInUser', JSON.stringify(user));
+            return user;
+          }
+          return null;
+        };
+
+        const logout = () => {
+          sessionStorage.removeItem('loggedInUser');
+        };
+
+        const getLoggedInUser = () => {
+          const userJson = sessionStorage.getItem('loggedInUser');
+          return userJson ? JSON.parse(userJson) : null;
+        };
+
+        const changePassword = (username, oldPassword, newPassword) => {
+            const users = getUsers();
+            const userIndex = users.findIndex(u => u.username === username && u.password === oldPassword);
+            if (userIndex === -1) {
+                return { success: false, message: 'La contraseña actual es incorrecta.' };
+            }
+            users[userIndex].password = newPassword;
+            saveUsers(users);
+            const loggedInUser = getLoggedInUser();
+            if (loggedInUser && loggedInUser.username === username) {
+                sessionStorage.setItem('loggedInUser', JSON.stringify(users[userIndex]));
+            }
+            return { success: true, message: 'Contraseña actualizada exitosamente.' };
+        };
+
+        const addUser = (username, password) => {
+            if (!username || !password) {
+                return { success: false, message: 'El nombre de usuario y la contraseña no pueden estar vacíos.' };
+            }
+            const users = getUsers();
+            if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+                return { success: false, message: `El usuario '${username}' ya existe.` };
+            }
+            users.push({ username, password });
+            saveUsers(users);
+            return { success: true, message: `Usuario '${username}' creado exitosamente.` };
+        };
+        
+        // --- From components/Icons.tsx ---
+        const CalendarIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }));
+        const CogIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" }), React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15 12a3 3 0 11-6 0 3 3 0 016 0z" }));
+        const SchoolIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, viewBox: "0 0 24 24", fill: "currentColor" }, React.createElement("path", { d: "M12 3L1 9l11 6 9-4.91V17h2V9L12 3zm0 8.47L4.5 8.02 12 5l7.5 3.02L12 11.47z" }), React.createElement("path", { d: "M18 17l-6 3.26L6 17v-1.76l6 3.26 6-3.26V17z" }));
+        const ClockIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" }));
+        const LocationMarkerIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" }), React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15 11a3 3 0 11-6 0 3 3 0 016 0z" }));
+        const UserGroupIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.184-1.268-.5-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.184-1.268.5-1.857m0 0a5.002 5.002 0 019 0m-9 0a5.002 5.002 0 00-9 0" }));
+        const InformationCircleIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" }));
+        const SparklesIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M5 3v4M3 5h4M6 17v4m-2-2h4m11-13l-1-1m2 2l-1-1m-2-2l-1 1m-1 1l1-1M19 12a7 7 0 11-14 0 7 7 0 0114 0z" }));
+        const UploadIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" }));
+        const DownloadIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" }));
+        const LogoutIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" }));
+        const KeyIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H5v-4h2v-2h2v-2l1.257-1.257A6 6 0 0117 7z" }));
+        const UserAddIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" }));
+        const EditIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z" }));
+        const DeleteIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }));
+
+        // --- From components/EventCard.tsx ---
+        const InfoRow = ({ icon, label, value }) => {
+          if (!value) return null;
+          return React.createElement("div", { className: "flex items-start gap-3" },
+            React.createElement("div", { className: "flex-shrink-0 text-blue-600 mt-1" }, icon),
+            React.createElement("div", null,
+              React.createElement("p", { className: "font-semibold text-gray-600" }, label),
+              React.createElement("p", { className: "text-gray-800" }, value)
+            )
+          );
+        };
+
+        const EventCard = ({ event }) => {
+          return React.createElement("div", { className: "event-card-container bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow duration-300 border border-gray-200 flex flex-col" },
+            React.createElement("div", { className: "p-5 bg-blue-600 text-white" },
+              React.createElement("h3", { className: "text-xl font-bold flex items-center gap-2" },
+                React.createElement(SparklesIcon, { className: "w-6 h-6" }),
+                event.actividad
+              )
+            ),
+            React.createElement("div", { className: "p-5 space-y-4 flex-grow" },
+              React.createElement(InfoRow, { icon: React.createElement(ClockIcon, { className: "w-5 h-5" }), label: "Hora", value: event.hora }),
+              React.createElement(InfoRow, { icon: React.createElement(LocationMarkerIcon, { className: "w-5 h-5" }), label: "Lugar", value: event.lugar }),
+              React.createElement(InfoRow, { icon: React.createElement(UserGroupIcon, { className: "w-5 h-5" }), label: "Participan", value: event.participan }),
+              React.createElement(InfoRow, { icon: React.createElement(InformationCircleIcon, { className: "w-5 h-5" }), label: "Observaciones", value: event.observaciones })
+            )
+          );
+        };
+        
+        // --- From components/Calendar.tsx ---
+        const Calendar = ({ selectedDate, onDateSelect, eventDates }) => {
+            const [displayDate, setDisplayDate] = useState(new Date(selectedDate));
+            const calSpanishMonths = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            const weekDays = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+            
+            const getTodayUTC = () => { const d = new Date(); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
+            const todayTime = getTodayUTC().getTime();
+
+            const changeMonth = (offset) => { setDisplayDate(prev => new Date(prev.getUTCFullYear(), prev.getUTCMonth() + offset, 1)); };
+
+            const renderHeader = () => React.createElement("div", { className: "flex justify-between items-center mb-4" },
+                React.createElement("button", { onClick: () => changeMonth(-1), className: "p-2 rounded-full hover:bg-gray-200 transition-colors" }, "<"),
+                React.createElement("div", { className: "font-bold text-lg text-gray-800" }, `${calSpanishMonths[displayDate.getUTCMonth()]} ${displayDate.getUTCFullYear()}`),
+                React.createElement("button", { onClick: () => changeMonth(1), className: "p-2 rounded-full hover:bg-gray-200 transition-colors" }, ">")
+            );
+
+            const renderDays = () => {
+                const year = displayDate.getUTCFullYear();
+                const month = displayDate.getUTCMonth();
+                const firstDayOfMonth = new Date(Date.UTC(year, month, 1)).getUTCDay();
+                const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+                const blanks = Array(firstDayOfMonth).fill(null);
+                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+                return [...blanks, ...days].map((day, index) => {
+                    if (!day) return React.createElement("div", { key: `blank-${index}`, className: "w-10 h-10" });
+                    const date = new Date(Date.UTC(year, month, day));
+                    const time = date.getTime();
+                    const isSelected = time === selectedDate.getTime();
+                    const isToday = time === todayTime;
+                    const hasEvent = eventDates.has(time);
+                    let classNames = 'w-10 h-10 flex items-center justify-center rounded-full transition-colors cursor-pointer relative ';
+                    if (isSelected) classNames += 'bg-blue-600 text-white font-bold ';
+                    else if (isToday) classNames += 'bg-blue-100 text-blue-700 font-semibold ';
+                    else classNames += 'hover:bg-gray-200 text-gray-700 ';
+
+                    return React.createElement("div", { key: day, className: "flex justify-center items-center" },
+                        React.createElement("button", { onClick: () => onDateSelect(date), className: classNames },
+                            day,
+                            hasEvent && !isSelected && React.createElement("span", { className: "absolute bottom-1 w-1.5 h-1.5 bg-blue-500 rounded-full" })
+                        )
+                    );
+                });
+            };
+
+            return React.createElement("div", { className: "bg-white p-4 rounded-lg shadow-md" },
+                renderHeader(),
+                React.createElement("div", { className: "grid grid-cols-7 gap-y-2 text-center text-sm text-gray-500 font-medium mb-2" },
+                    weekDays.map(day => React.createElement("div", { key: day }, day))
+                ),
+                React.createElement("div", { className: "grid grid-cols-7 gap-y-2" }, renderDays())
+            );
+        };
+        
+        // --- From components/ScheduleView.tsx ---
+        const ScheduleView = ({ events }) => {
+            const getTodayUTC = () => { const today = new Date(); return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())); };
+
+            const [filter, setFilter] = useState('day');
+            const [selectedDate, setSelectedDate] = useState(getTodayUTC);
+            const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+            const calendarRef = useRef(null);
+            const calendarButtonRef = useRef(null);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (isCalendarOpen && calendarRef.current && !calendarRef.current.contains(event.target) && calendarButtonRef.current && !calendarButtonRef.current.contains(event.target)) {
+                        setIsCalendarOpen(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [isCalendarOpen]);
+
+            const eventDates = useMemo(() => new Set(events.map(e => e.dateObject.getTime())), [events]);
+
+            const { title, groupedEvents, totalEvents } = useMemo(() => {
+                const groupEventsByDate = (eventList) => eventList.reduce((acc, event) => {
+                    const dateKey = formatDate(event.dateObject);
+                    if (!acc[dateKey]) acc[dateKey] = [];
+                    acc[dateKey].push(event);
+                    return acc;
+                }, {});
+
+                let periodEvents = [];
+                let viewTitle = '';
+
+                switch (filter) {
+                    case 'week': {
+                        const startOfWeek = new Date(selectedDate);
+                        const dayOfWeek = selectedDate.getUTCDay();
+                        const diff = selectedDate.getUTCDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+                        startOfWeek.setUTCDate(diff);
+                        const endOfWeek = new Date(startOfWeek);
+                        endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
+                        periodEvents = events.filter(e => e.dateObject.getTime() >= startOfWeek.getTime() && e.dateObject.getTime() <= endOfWeek.getTime());
+                        viewTitle = `Semana del ${formatDate(startOfWeek)} al ${formatDate(endOfWeek)}`;
+                        break;
+                    }
+                    case 'month': {
+                        periodEvents = events.filter(e => e.dateObject.getUTCMonth() === selectedDate.getUTCMonth() && e.dateObject.getUTCFullYear() === selectedDate.getUTCFullYear());
+                        viewTitle = `Eventos de ${selectedDate.toLocaleString('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`;
+                        break;
+                    }
+                    default: { // day
+                        periodEvents = events.filter(e => e.dateObject.getTime() === selectedDate.getTime());
+                        viewTitle = formatDate(selectedDate);
+                    }
+                }
+                return { title: viewTitle, groupedEvents: groupEventsByDate(periodEvents), totalEvents: periodEvents.length };
+            }, [events, filter, selectedDate]);
+
+            const handleDateSelect = (date) => { setSelectedDate(date); setFilter('day'); setIsCalendarOpen(false); };
+            
+            const FilterButton = ({ label, view }) => React.createElement("button", {
+                onClick: () => setFilter(view),
+                className: `px-4 py-2 text-sm sm:text-base rounded-lg font-semibold transition-all duration-200 ${filter === view ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`
+            }, label);
+
+            return React.createElement("div", { className: "space-y-6" },
+                React.createElement("div", { className: "relative" },
+                    React.createElement("div", { className: "bg-white p-4 rounded-lg shadow-md space-y-4 printable-area" },
+                        React.createElement("div", { className: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4" },
+                            React.createElement("div", { className: "flex items-center gap-4" },
+                                React.createElement("h2", { className: "text-2xl font-bold text-blue-700 capitalize" }, title),
+                                React.createElement("button", { ref: calendarButtonRef, onClick: () => setIsCalendarOpen(prev => !prev), className: "no-print p-2 rounded-full bg-blue-100 hover:bg-blue-200 transition-colors", "aria-label": "Seleccionar fecha" },
+                                    React.createElement(CalendarIcon, { className: "w-6 h-6 text-blue-700" })
+                                )
+                            ),
+                            React.createElement("div", { className: "flex items-center gap-2 no-print" },
+                                React.createElement(FilterButton, { label: "Día", view: "day" }),
+                                React.createElement(FilterButton, { label: "Semana", view: "week" }),
+                                React.createElement(FilterButton, { label: "Mes", view: "month" })
+                            )
+                        ),
+                        React.createElement("p", { className: "text-gray-600" }, totalEvents > 0 ? `Hay ${totalEvents} evento(s) en este período.` : 'No hay eventos programados para este período.')
+                    ),
+                    isCalendarOpen && React.createElement("div", { ref: calendarRef, className: "absolute top-full right-0 mt-2 z-20 w-full max-w-sm no-print" },
+                        React.createElement(Calendar, { selectedDate: selectedDate, onDateSelect: handleDateSelect, eventDates: eventDates })
+                    )
+                ),
+                totalEvents > 0 ?
+                React.createElement("div", { className: "space-y-8" },
+                    Object.entries(groupedEvents).map(([date, dailyEvents]) => React.createElement("div", { key: date },
+                        filter !== 'day' && React.createElement("div", { className: "flex items-center gap-4 p-3 bg-yellow-100 rounded-lg border-l-4 border-blue-800 mb-4" },
+                            React.createElement(CalendarIcon, { className: "w-8 h-8 text-blue-900" }),
+                            React.createElement("h3", { className: "text-xl font-semibold text-blue-900 capitalize" }, date)
+                        ),
+                        React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" },
+                            dailyEvents.map(event => React.createElement(EventCard, { key: event.id, event: event }))
+                        )
+                    ))
+                ) :
+                React.createElement("div", { className: "text-center py-16 px-6 bg-white rounded-lg shadow-md" },
+                    React.createElement("h3", { className: "text-xl font-semibold text-gray-700" }, "No hay eventos para mostrar."),
+                    React.createElement("p", { className: "text-gray-500 mt-2" }, "Puede seleccionar otra fecha usando el ícono de calendario o cargar un nuevo cronograma en la sección de configuración.")
+                )
+            );
+        };
+        
+        // --- From components/LoginView.tsx ---
+        const LoginView = ({ onLoginSuccess }) => {
+            const [username, setUsername] = useState('admin');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                setIsLoading(true);
+                setError(null);
+                setTimeout(() => {
+                    const user = login(username, password);
+                    if (user) {
+                        onLoginSuccess();
+                    } else {
+                        setError('Usuario o contraseña incorrectos.');
+                        setIsLoading(false);
+                    }
+                }, 500);
+            };
+
+            return React.createElement("div", { className: "flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8" },
+                React.createElement("div", { className: "max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "mx-auto h-12 w-12 bg-blue-600 rounded-full flex items-center justify-center" },
+                            React.createElement(SchoolIcon, { className: "h-8 w-8 text-white" })
+                        ),
+                        React.createElement("h2", { className: "mt-6 text-center text-3xl font-extrabold text-gray-900" }, "Acceso a Configuración"),
+                        React.createElement("p", { className: "mt-2 text-center text-sm text-gray-600" }, "Por favor, ingrese sus credenciales.")
+                    ),
+                    React.createElement("form", { className: "mt-8 space-y-6", onSubmit: handleSubmit },
+                        React.createElement("div", { className: "rounded-md shadow-sm -space-y-px" },
+                            React.createElement("div", null,
+                                React.createElement("label", { htmlFor: "username", className: "sr-only" }, "Usuario"),
+                                React.createElement("input", { id: "username", name: "username", type: "text", autoComplete: "username", required: true, value: username, onChange: (e) => setUsername(e.target.value), className: "appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm", placeholder: "Usuario" })
+                            ),
+                            React.createElement("div", null,
+                                React.createElement("label", { htmlFor: "password-login", className: "sr-only" }, "Contraseña"),
+                                React.createElement("input", { id: "password-login", name: "password", type: "password", autoComplete: "current-password", required: true, value: password, onChange: (e) => setPassword(e.target.value), className: "appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm", placeholder: "Contraseña" })
+                            )
+                        ),
+                        error && React.createElement("div", { className: "bg-red-100 border-l-4 border-red-500 text-red-700 p-3", role: "alert" }, React.createElement("p", { className: "text-sm" }, error)),
+                        React.createElement("div", null,
+                            React.createElement("button", { type: "submit", disabled: isLoading, className: "group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300" }, isLoading ? 'Ingresando...' : 'Ingresar')
+                        )
+                    )
+                )
+            );
+        };
+        
+        // --- From components/ConfigurationView.tsx ---
+        const emptyEvent = { fecha: '', dia: '', hora: '', lugar: '', actividad: '', participan: '', observaciones: '' };
+
+        const EventFormModal = ({ isOpen, onClose, onSave, eventToEdit }) => {
+          const [formData, setFormData] = useState(eventToEdit || emptyEvent);
+          const [error, setError] = useState(null);
+
+          useEffect(() => {
+            setFormData(eventToEdit ? { ...eventToEdit } : emptyEvent);
+            setError(null);
+          }, [eventToEdit, isOpen]);
+
+          const handleChange = (e) => {
+            const { name, value } = e.target;
+            setFormData(prev => ({ ...prev, [name]: value }));
+          };
+
+          const handleSubmit = (e) => {
+            e.preventDefault();
+            setError(null);
+            if (!formData.actividad || !formData.fecha) { setError('La actividad y la fecha son campos obligatorios.'); return; }
+            const dateObject = parseDate(formData.fecha);
+            if (!dateObject) { setError('Formato de fecha inválido. Use "DD Mes AAAA", ej: "01 Septiembre 2025".'); return; }
+            const eventToSave = { ...formData, id: eventToEdit?.id || `${Date.now()}-${Math.random()}`, dateObject, fecha: formatToStandardDateString(dateObject) };
+            onSave(eventToSave);
+          };
+
+          if (!isOpen) return null;
+
+          return React.createElement("div", { className: "fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" },
+            React.createElement("div", { className: "bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-full overflow-y-auto" },
+              React.createElement("h2", { className: "text-2xl font-bold mb-4" }, eventToEdit ? 'Editar Evento' : 'Crear Nuevo Evento'),
+              React.createElement("form", { onSubmit: handleSubmit, className: "space-y-4" },
+                React.createElement("div", null,
+                  React.createElement("label", { htmlFor: "actividad", className: "block text-sm font-medium text-gray-700" }, "Actividad"),
+                  React.createElement("input", { type: "text", name: "actividad", id: "actividad", value: formData.actividad, onChange: handleChange, required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" })
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+                    React.createElement("div", null, React.createElement("label", { htmlFor: "fecha", className: "block text-sm font-medium text-gray-700" }, "Fecha"), React.createElement("input", { type: "text", name: "fecha", id: "fecha", value: formData.fecha, onChange: handleChange, placeholder: "Ej: 01 Septiembre 2025", required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" })),
+                    React.createElement("div", null, React.createElement("label", { htmlFor: "dia", className: "block text-sm font-medium text-gray-700" }, "Día"), React.createElement("input", { type: "text", name: "dia", id: "dia", value: formData.dia, onChange: handleChange, placeholder: "Ej: Lunes", className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" }))
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+                    React.createElement("div", null, React.createElement("label", { htmlFor: "hora", className: "block text-sm font-medium text-gray-700" }, "Hora"), React.createElement("input", { type: "text", name: "hora", id: "hora", value: formData.hora, onChange: handleChange, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" })),
+                    React.createElement("div", null, React.createElement("label", { htmlFor: "lugar", className: "block text-sm font-medium text-gray-700" }, "Lugar"), React.createElement("input", { type: "text", name: "lugar", id: "lugar", value: formData.lugar, onChange: handleChange, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" }))
+                ),
+                React.createElement("div", null, React.createElement("label", { htmlFor: "participan", className: "block text-sm font-medium text-gray-700" }, "Participan"), React.createElement("textarea", { name: "participan", id: "participan", value: formData.participan, onChange: handleChange, rows: 2, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" })),
+                React.createElement("div", null, React.createElement("label", { htmlFor: "observaciones", className: "block text-sm font-medium text-gray-700" }, "Observaciones"), React.createElement("textarea", { name: "observaciones", id: "observaciones", value: formData.observaciones, onChange: handleChange, rows: 2, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" })),
+                error && React.createElement("div", { className: "bg-red-100 border-l-4 border-red-500 text-red-700 p-3 my-2 rounded", role: "alert" }, React.createElement("p", { className: "text-sm" }, error)),
+                React.createElement("div", { className: "flex justify-end gap-4 pt-4" },
+                  React.createElement("button", { type: "button", onClick: onClose, className: "px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300" }, "Cancelar"),
+                  React.createElement("button", { type: "submit", className: "px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700" }, "Guardar Cambios")
+                )
+              )
+            )
+          );
+        };
+
+        const UserManagement = () => {
+          const [currentUser] = useState(getLoggedInUser());
+          const [oldPassword, setOldPassword] = useState('');
+          const [newPassword, setNewPassword] = useState('');
+          const [confirmNewPassword, setConfirmNewPassword] = useState('');
+          const [changePassMessage, setChangePassMessage] = useState(null);
+          const [newUsername, setNewUsername] = useState('');
+          const [newUserPassword, setNewUserPassword] = useState('');
+          const [addUserMessage, setAddUserMessage] = useState(null);
+
+          const handleChangePassword = (e) => {
+            e.preventDefault();
+            setChangePassMessage(null);
+            if (newPassword !== confirmNewPassword) { setChangePassMessage({ type: 'error', text: 'Las contraseñas nuevas no coinciden.' }); return; }
+            if (!currentUser) return;
+            const result = changePassword(currentUser.username, oldPassword, newPassword);
+            setChangePassMessage({ type: result.success ? 'success' : 'error', text: result.message });
+            if (result.success) { setOldPassword(''); setNewPassword(''); setConfirmNewPassword(''); }
+          };
+          
+          const handleAddUser = (e) => {
+            e.preventDefault();
+            setAddUserMessage(null);
+            const result = addUser(newUsername, newUserPassword);
+            setAddUserMessage({ type: result.success ? 'success' : 'error', text: result.message });
+            if (result.success) { setNewUsername(''); setNewUserPassword(''); }
+          };
+
+          if (!currentUser) return null;
+
+          return React.createElement("div", { className: "bg-white p-6 rounded-lg shadow-md space-y-8 mt-8" },
+            React.createElement("h2", { className: "text-2xl font-bold text-gray-800 border-b pb-2" }, "Gestión de Usuarios"),
+            React.createElement("form", { onSubmit: handleChangePassword, className: "space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold flex items-center gap-2" }, React.createElement(KeyIcon, { className: "w-5 h-5 text-blue-600" }), `Cambiar mi Contraseña (${currentUser.username})`),
+              React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-gray-700" }, "Contraseña Actual"), React.createElement("input", { type: "password", value: oldPassword, onChange: e => setOldPassword(e.target.value), required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" })),
+              React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-gray-700" }, "Nueva Contraseña"), React.createElement("input", { type: "password", value: newPassword, onChange: e => setNewPassword(e.target.value), required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" })),
+              React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-gray-700" }, "Confirmar Nueva Contraseña"), React.createElement("input", { type: "password", value: confirmNewPassword, onChange: e => setConfirmNewPassword(e.target.value), required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" })),
+              changePassMessage && React.createElement("div", { className: `${changePassMessage.type === 'success' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-red-100 border-red-500 text-red-700'} border-l-4 p-3 my-2 rounded`, role: "alert" }, React.createElement("p", { className: "text-sm" }, changePassMessage.text)),
+              React.createElement("button", { type: "submit", className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, "Actualizar Contraseña")
+            ),
+            React.createElement("hr", null),
+            React.createElement("form", { onSubmit: handleAddUser, className: "space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold flex items-center gap-2" }, React.createElement(UserAddIcon, { className: "w-5 h-5 text-blue-600" }), "Añadir Nuevo Usuario"),
+              React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-gray-700" }, "Nuevo Nombre de Usuario"), React.createElement("input", { type: "text", value: newUsername, onChange: e => setNewUsername(e.target.value), required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" })),
+              React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-gray-700" }, "Contraseña del Nuevo Usuario"), React.createElement("input", { type: "password", value: newUserPassword, onChange: e => setNewUserPassword(e.target.value), required: true, className: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" })),
+              addUserMessage && React.createElement("div", { className: `${addUserMessage.type === 'success' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-red-100 border-red-500 text-red-700'} border-l-4 p-3 my-2 rounded`, role: "alert" }, React.createElement("p", { className: "text-sm" }, addUserMessage.text)),
+              React.createElement("button", { type: "submit", className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, "Crear Usuario")
+            )
+          );
+        };
+        
+        const generateExcelTemplate = () => {
+          const ws = XLSX.utils.aoa_to_sheet([['Fecha (Ej: 01 Septiembre 2025)','Día (Ej: Lunes)','Hora','Lugar','Actividad','Participan','Observaciones']]);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Cronograma');
+          XLSX.writeFile(wb, 'plantilla_cronograma.xlsx');
+        };
+
+        const parseExcelFile = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = event.target?.result;
+                    const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+                    const sheetName = workbook.SheetNames[0];
+                    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
+                    if (jsonData.length < 2) { resolve([]); return; }
+                    resolve(jsonData.slice(1).map(row => {
+                        let dateObject = null; let fechaString = '';
+                        if (row[0] instanceof Date && !isNaN(row[0].getTime())) { dateObject = new Date(Date.UTC(row[0].getFullYear(), row[0].getMonth(), row[0].getDate())); fechaString = formatToStandardDateString(dateObject); }
+                        else if (typeof row[0] === 'string' && row[0].trim()) { fechaString = row[0].trim(); dateObject = parseDate(fechaString); if (dateObject) { fechaString = formatToStandardDateString(dateObject); } }
+                        return { fecha: fechaString, dia: String(row[1] || ''), hora: String(row[2] || ''), lugar: String(row[3] || ''), actividad: String(row[4] || ''), participan: String(row[5] || ''), observaciones: String(row[6] || ''), dateObject: dateObject };
+                    }));
+                } catch (error) { reject(error); }
+            };
+            reader.onerror = (error) => reject(error);
+            reader.readAsBinaryString(file);
+        });
+
+        const ConfigurationView = ({ events, setEvents }) => {
+            const [localEvents, setLocalEvents] = useState(events);
+            const [hasChanges, setHasChanges] = useState(false);
+            const [error, setError] = useState(null);
+            const [success, setSuccess] = useState(null);
+            const [fileName, setFileName] = useState(null);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [eventToEdit, setEventToEdit] = useState(null);
+
+            const handleExcelUpload = useCallback(async (e) => {
+                const file = e.target.files?.[0]; if (!file) return;
+                setError(null); setSuccess(null); setFileName(file.name);
+                try {
+                    const parsedData = await parseExcelFile(file);
+                    let invalidDateCount = 0;
+                    const validEvents = parsedData.filter(item => {
+                        if (item.dateObject && item.fecha && item.actividad) return true;
+                        if(item.fecha || item.actividad) invalidDateCount++;
+                        return false;
+                    }).map((item, index) => ({ ...item, id: `${Date.now()}-${index}` }));
+                    const existingKeys = new Set(localEvents.map(ev => `${ev.fecha}|${ev.hora}|${ev.actividad}`));
+                    const uniqueNewEvents = validEvents.filter(ev => !existingKeys.has(`${ev.fecha}|${ev.hora}|${ev.actividad}`));
+                    if (uniqueNewEvents.length > 0) { setLocalEvents(prev => [...prev, ...uniqueNewEvents]); setHasChanges(true); }
+                    let successMsg = `Proceso completado. ${uniqueNewEvents.length} evento(s) nuevo(s) listo(s) para guardar.`;
+                    if (validEvents.length - uniqueNewEvents.length > 0) successMsg += ` Se omitieron ${validEvents.length - uniqueNewEvents.length} duplicado(s).`;
+                    if (invalidDateCount > 0) successMsg += ` Se omitieron ${invalidDateCount} por formato inválido.`;
+                    setSuccess(successMsg);
+                } catch (err) { setError(err instanceof Error ? `Fallo al procesar: ${err.message}` : 'Error desconocido.'); setFileName(null); }
+                finally { e.target.value = ''; }
+            }, [localEvents]);
+
+            const handleDeleteEvent = (eventId) => { if (window.confirm('¿Seguro que desea eliminar este evento?')) { setLocalEvents(prev => prev.filter(e => e.id !== eventId)); setHasChanges(true); } };
+            const handleSaveEvent = (eventData) => { setLocalEvents(prev => prev.some(e => e.id === eventData.id) ? prev.map(e => e.id === eventData.id ? eventData : e) : [...prev, eventData]); setHasChanges(true); setIsModalOpen(false); setEventToEdit(null); };
+            const handleExportToExcel = () => {
+                const headers = ['Fecha', 'Día', 'Hora', 'Lugar', 'Actividad', 'Participan', 'Observaciones'];
+                const data = [...localEvents].sort((a,b) => a.dateObject.getTime() - b.dateObject.getTime()).map(ev => [ ev.fecha, ev.dia, ev.hora, ev.lugar, ev.actividad, ev.participan, ev.observaciones]);
+                const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Cronograma');
+                XLSX.writeFile(wb, 'cronograma_actual.xlsx');
+            };
+            const handleSaveChanges = () => { setEvents([...localEvents]); setHasChanges(false); setSuccess('¡Cambios guardados! Puede verlos en la página del Cronograma.'); setTimeout(() => setSuccess(null), 5000); };
+            const handleDiscardChanges = () => { if (window.confirm('¿Seguro? Se perderán los cambios no guardados.')) { setLocalEvents(events); setHasChanges(false); setError(null); setSuccess(null); } };
+
+            return React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "bg-white p-6 rounded-lg shadow-md space-y-6" },
+                    React.createElement("h2", { className: "text-2xl font-bold text-gray-800 border-b pb-2" }, "Configuración de Datos"),
+                    error && React.createElement("div", { className: "bg-red-100 border-l-4 border-red-500 text-red-700 p-4", role: "alert" }, React.createElement("p", null, error)),
+                    success && React.createElement("div", { className: "bg-green-100 border-l-4 border-green-500 text-green-700 p-4", role: "alert" }, React.createElement("p", null, success)),
+                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "1. Descargar Plantilla"), React.createElement("p", { className: "text-gray-600" }, "Descargue la plantilla de Excel para asegurarse de que los datos tengan el formato correcto."), React.createElement("button", { onClick: generateExcelTemplate, className: "inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Descargar Plantilla Excel")),
+                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "2. Subir Cronograma"), React.createElement("p", { className: "text-gray-600" }, "Una vez que haya llenado la plantilla, súbala aquí para añadir los eventos al cronograma existente."), React.createElement("div", { className: "p-4 border-2 border-dashed border-gray-300 rounded-lg text-center" }, React.createElement("label", { htmlFor: "file-upload", className: "cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, React.createElement(UploadIcon, { className: "w-5 h-5" }), "Seleccionar Archivo Excel"), React.createElement("input", { id: "file-upload", type: "file", accept: ".xlsx, .xls", onChange: handleExcelUpload, className: "hidden" }), fileName && React.createElement("p", { className: "mt-2 text-sm text-gray-600" }, `Archivo seleccionado: ${fileName}`))),
+                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "3. Exportar Cronograma Actual"), React.createElement("p", { className: "text-gray-600" }, "Exporte todos los eventos cargados actualmente (incluyendo cambios no guardados) a un archivo de Excel."), React.createElement("button", { onClick: handleExportToExcel, className: "inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Exportar a Excel")),
+                    React.createElement("div", { className: "space-y-4 pt-4 border-t" },
+                        React.createElement("h3", { className: "text-lg font-semibold" }, "4. Gestionar Eventos Individualmente"),
+                        React.createElement("p", { className: "text-gray-600" }, "Añada, modifique o elimine eventos uno por uno. Recuerde guardar los cambios al final."),
+                        React.createElement("button", { onClick: () => { setEventToEdit(null); setIsModalOpen(true); }, className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, "Crear Nuevo Evento"),
+                        React.createElement("div", { className: "mt-4" }, React.createElement("h4", { className: "font-semibold text-gray-700 mb-2" }, `Lista de Eventos (${localEvents.length})`),
+                            React.createElement("div", { className: "space-y-2 max-h-[500px] overflow-y-auto pr-2 bg-gray-50 p-2 rounded-lg" },
+                                localEvents.map(event => React.createElement("div", { key: event.id, className: "p-3 border rounded-md flex justify-between items-center bg-white shadow-sm" },
+                                    React.createElement("div", { className: "flex-1 min-w-0" }, React.createElement("p", { className: "font-semibold text-gray-800 truncate", title: event.actividad }, event.actividad), React.createElement("p", { className: "text-sm text-gray-500" }, `${event.fecha} • ${event.hora}`)),
+                                    React.createElement("div", { className: "flex gap-2 flex-shrink-0 ml-4" },
+                                        React.createElement("button", { onClick: () => { setEventToEdit(event); setIsModalOpen(true); }, className: "p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded-full", "aria-label": "Editar" }, React.createElement(EditIcon, { className: "w-5 h-5" })),
+                                        React.createElement("button", { onClick: () => handleDeleteEvent(event.id), className: "p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-full", "aria-label": "Eliminar" }, React.createElement(DeleteIcon, { className: "w-5 h-5" }))
+                                    )
+                                ))
+                            )
+                        )
+                    )
+                ),
+                React.createElement(UserManagement, null),
+                hasChanges && React.createElement("div", { className: "fixed bottom-0 left-0 right-0 bg-gray-800 bg-opacity-95 p-4 z-50 shadow-lg" },
+                    React.createElement("div", { className: "max-w-7xl mx-auto flex justify-between items-center px-4 sm:px-6 md:px-8" },
+                        React.createElement("p", { className: "font-semibold text-white" }, "Tiene cambios pendientes de guardar."),
+                        React.createElement("div", null,
+                            React.createElement("button", { onClick: handleDiscardChanges, className: "px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 mr-4 transition-colors" }, "Descartar"),
+                            React.createElement("button", { onClick: handleSaveChanges, className: "px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 transition-colors" }, "Guardar Cambios")
+                        )
+                    )
+                ),
+                React.createElement(EventFormModal, { isOpen: isModalOpen, onClose: () => setIsModalOpen(false), onSave: handleSaveEvent, eventToEdit: eventToEdit })
+            );
+        };
+        
+        // --- From components/Header.tsx ---
+        const Header = ({ currentView, setView, isAuthenticated, onLogout }) => {
+            const currentYear = new Date().getFullYear();
+            const NavButton = ({ view, label, icon }) => React.createElement("button", {
+                onClick: () => setView(view),
+                className: `flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors duration-200 ${currentView === view ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-200'}`
+            }, icon, React.createElement("span", { className: "hidden sm:inline" }, label));
+
+            return React.createElement("header", { className: "bg-white shadow-md" },
+                React.createElement("div", { className: "max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-4 flex justify-between items-center" },
+                    React.createElement("div", { className: "flex items-center gap-3" },
+                        React.createElement("div", { className: "bg-blue-600 p-2 rounded-full text-white" }, React.createElement(SchoolIcon, { className: "w-8 h-8" })),
+                        React.createElement("h1", { className: "text-xl md:text-2xl font-bold text-gray-800 uppercase" }, `Cronograma IENSECAN ${currentYear}`)
+                    ),
+                    React.createElement("nav", { className: "flex items-center gap-2" },
+                        React.createElement(NavButton, { view: "schedule", label: "Cronograma", icon: React.createElement(CalendarIcon, { className: "w-5 h-5" }) }),
+                        React.createElement(NavButton, { view: "config", label: "Configuración", icon: React.createElement(CogIcon, { className: "w-5 h-5" }) }),
+                        isAuthenticated && currentView === 'config' && React.createElement("button", { onClick: onLogout, className: "flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors duration-200 bg-red-500 text-white hover:bg-red-600", "aria-label": "Cerrar sesión" },
+                            React.createElement(LogoutIcon, { className: "w-5 h-5" }),
+                            React.createElement("span", { className: "hidden sm:inline" }, "Salir")
+                        )
+                    )
+                )
+            );
+        };
+
+        // --- From App.tsx ---
+        const EVENTS_STORAGE_KEY = 'cronograma_iensecan_events';
+
+        const App = () => {
+            const [events, setEvents] = useState([]);
+            const [view, setView] = useState('schedule');
+            const [isAuthenticated, setIsAuthenticated] = useState(!!getLoggedInUser());
+
+            useEffect(() => {
+                initializeUsers();
+                const storedEventsJson = localStorage.getItem(EVENTS_STORAGE_KEY);
+                let loadedEvents = [];
+
+                if (storedEventsJson) {
+                    loadedEvents = JSON.parse(storedEventsJson).map(event => ({ ...event, dateObject: new Date(event.dateObject) }));
+                } else {
+                    loadedEvents = initialScheduleData
+                        .map((event, index) => ({ ...event, id: `${Date.now()}-${index}`, dateObject: parseDate(event.fecha) }))
+                        .filter(event => event.dateObject !== null);
+                    localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(loadedEvents));
+                }
+                
+                loadedEvents.sort((a, b) => a.dateObject.getTime() - b.dateObject.getTime());
+                setEvents(loadedEvents);
+            }, []);
+
+            const handleEventsUpdate = (updatedEvents) => {
+                const sortedEvents = [...updatedEvents].sort((a, b) => a.dateObject.getTime() - b.dateObject.getTime());
+                setEvents(sortedEvents);
+                localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(sortedEvents));
+            };
+
+            const handleLogout = () => { logout(); setIsAuthenticated(false); setView('schedule'); };
+            
+            const renderContent = () => {
+                if (view === 'schedule') return React.createElement(ScheduleView, { events: events });
+                if (view === 'config') {
+                    if (isAuthenticated) return React.createElement(ConfigurationView, { events: events, setEvents: handleEventsUpdate });
+                    return React.createElement(LoginView, { onLoginSuccess: () => setIsAuthenticated(true) });
+                }
+                return null;
+            };
+
+            return React.createElement("div", { className: "min-h-screen bg-gray-50 font-sans text-gray-800" },
+                React.createElement(Header, { currentView: view, setView: setView, isAuthenticated: isAuthenticated, onLogout: handleLogout }),
+                React.createElement("main", { className: "p-4 sm:p-6 md:p-8 max-w-7xl mx-auto" }, renderContent()),
+                React.createElement("footer", { className: "text-center p-4 text-gray-500 text-sm mt-8 border-t" },
+                    React.createElement("div", { className: "flex items-center justify-center gap-2" },
+                        React.createElement(SchoolIcon, { className: "w-6 h-6" }),
+                        React.createElement("span", null, "Institución Educativa Nuestra Señora de la Candelaria")
+                    ),
+                    React.createElement("p", null, "Candelaria - Valle")
+                )
+            );
+        };
+
+        // --- From index.tsx ---
+        const rootElement = document.getElementById('root');
+        if (!rootElement) {
+            throw new Error("Could not find root element to mount to");
+        }
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(React.createElement(React.StrictMode, null, React.createElement(App, null)));
+    </script>
+</body>
+</html>
