@@ -238,6 +238,9 @@
         const UserAddIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" }));
         const EditIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z" }));
         const DeleteIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" }));
+        const GoogleSheetIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, viewBox: "0 0 24 24", fill: "currentColor" }, React.createElement("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 11h-2v2H9v-2H7v-2h2v-2h2v2h2v2zm5 5H6v-2h12v2zm0-4H6v-2h12v2z" }));
+        const ChevronLeftIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15 19l-7-7 7-7" }));
+        const ChevronRightIcon = ({ className }) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M9 5l7 7-7 7" }));
 
         // --- From components/EventCard.tsx ---
         const InfoRow = ({ icon, label, value }) => {
@@ -383,6 +386,19 @@
 
             const handleDateSelect = (date) => { setSelectedDate(date); setFilter('day'); setIsCalendarOpen(false); };
             
+            const handleNavigation = (direction) => {
+                const newDate = new Date(selectedDate);
+                const offset = direction === 'next' ? 1 : -1;
+                if (filter === 'day') {
+                    newDate.setUTCDate(newDate.getUTCDate() + offset);
+                } else if (filter === 'week') {
+                    newDate.setUTCDate(newDate.getUTCDate() + (offset * 7));
+                } else if (filter === 'month') {
+                    newDate.setUTCFullYear(newDate.getUTCFullYear() + offset);
+                }
+                setSelectedDate(newDate);
+            };
+
             const FilterButton = ({ label, view }) => React.createElement("button", {
                 onClick: () => setFilter(view),
                 className: `px-4 py-2 text-sm sm:text-base rounded-lg font-semibold transition-all duration-200 ${filter === view ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`
@@ -398,10 +414,24 @@
                                     React.createElement(CalendarIcon, { className: "w-6 h-6 text-blue-700" })
                                 )
                             ),
-                            React.createElement("div", { className: "flex items-center gap-2 no-print" },
-                                React.createElement(FilterButton, { label: "Día", view: "day" }),
-                                React.createElement(FilterButton, { label: "Semana", view: "week" }),
-                                React.createElement(FilterButton, { label: "Mes", view: "month" })
+                            React.createElement("div", { className: "flex flex-col items-end sm:flex-row sm:items-center gap-2 no-print" },
+                                (filter === 'day' || filter === 'week' || filter === 'month') && React.createElement("div", { className: "flex items-center gap-2" },
+                                    React.createElement("button", {
+                                        onClick: () => handleNavigation('prev'),
+                                        className: "p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors",
+                                        "aria-label": filter === 'day' ? "Día anterior" : filter === 'week' ? "Semana anterior" : "Año anterior"
+                                    }, React.createElement(ChevronLeftIcon, { className: "w-5 h-5" })),
+                                    React.createElement("button", {
+                                        onClick: () => handleNavigation('next'),
+                                        className: "p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors",
+                                        "aria-label": filter === 'day' ? "Día siguiente" : filter === 'week' ? "Semana siguiente" : "Año siguiente"
+                                    }, React.createElement(ChevronRightIcon, { className: "w-5 h-5" }))
+                                ),
+                                React.createElement("div", { className: "flex items-center gap-2" },
+                                    React.createElement(FilterButton, { label: "Día", view: "day" }),
+                                    React.createElement(FilterButton, { label: "Semana", view: "week" }),
+                                    React.createElement(FilterButton, { label: "Mes", view: "month" })
+                                )
                             )
                         ),
                         React.createElement("p", { className: "text-gray-600" }, totalEvents > 0 ? `Hay ${totalEvents} evento(s) en este período.` : 'No hay eventos programados para este período.')
@@ -616,6 +646,31 @@
             reader.readAsBinaryString(file);
         });
 
+        const parseCsvText = (csvText) => {
+            const lines = csvText.trim().replace(/\r/g, '').split('\n');
+            if (lines.length < 2) return [];
+            const headersRaw = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            
+            const keyMap = {
+                'Fecha': 'fecha', 'Día': 'dia', 'Hora': 'hora', 'Lugar': 'lugar',
+                'Actividad': 'actividad', 'Participan': 'participan', 'Observaciones': 'observaciones'
+            };
+
+            const headers = headersRaw.map(h => {
+                const matchedKey = Object.keys(keyMap).find(k => h.startsWith(k));
+                return matchedKey ? keyMap[matchedKey] : h.toLowerCase();
+            });
+
+            return lines.slice(1).map(line => {
+                const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                const obj = {};
+                headers.forEach((header, i) => {
+                    obj[header] = values[i] ? values[i].trim().replace(/^"|"$/g, '') : '';
+                });
+                return obj;
+            });
+        };
+
         const ConfigurationView = ({ events, setEvents }) => {
             const [localEvents, setLocalEvents] = useState(events);
             const [hasChanges, setHasChanges] = useState(false);
@@ -624,28 +679,86 @@
             const [fileName, setFileName] = useState(null);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [eventToEdit, setEventToEdit] = useState(null);
+            const [googleSheetUrl, setGoogleSheetUrl] = useState('');
+            const [isLoadingSheet, setIsLoadingSheet] = useState(false);
+
+            useEffect(() => {
+              setLocalEvents(events);
+            }, [events]);
+
+            const processAndMergeEvents = (newEvents) => {
+                let invalidDateCount = 0;
+                const validEvents = newEvents
+                    .map((item, index) => {
+                        const dateObject = parseDate(item.fecha);
+                        return {
+                            ...item,
+                            id: `${Date.now()}-${Math.random()}-${index}`,
+                            dateObject: dateObject,
+                            fecha: dateObject ? formatToStandardDateString(dateObject) : item.fecha,
+                        };
+                    })
+                    .filter(item => {
+                        if (item.dateObject && item.actividad) return true;
+                        if (item.fecha || item.actividad) invalidDateCount++;
+                        return false;
+                    });
+
+                const existingKeys = new Set(localEvents.map(ev => `${ev.fecha}|${ev.hora}|${ev.actividad}`));
+                const uniqueNewEvents = validEvents.filter(ev => !existingKeys.has(`${ev.fecha}|${ev.hora}|${ev.actividad}`));
+                const duplicateCount = validEvents.length - uniqueNewEvents.length;
+
+                if (uniqueNewEvents.length > 0) {
+                    setLocalEvents(prev => [...prev, ...uniqueNewEvents]);
+                    setHasChanges(true);
+                }
+                
+                let successMsg = `Proceso completado. ${uniqueNewEvents.length} evento(s) nuevo(s) listo(s) para guardar.`;
+                if (duplicateCount > 0) successMsg += ` Se omitieron ${duplicateCount} duplicado(s).`;
+                if (invalidDateCount > 0) successMsg += ` Se omitieron ${invalidDateCount} por formato inválido.`;
+                setSuccess(successMsg);
+            };
 
             const handleExcelUpload = useCallback(async (e) => {
                 const file = e.target.files?.[0]; if (!file) return;
                 setError(null); setSuccess(null); setFileName(file.name);
                 try {
                     const parsedData = await parseExcelFile(file);
-                    let invalidDateCount = 0;
-                    const validEvents = parsedData.filter(item => {
-                        if (item.dateObject && item.fecha && item.actividad) return true;
-                        if(item.fecha || item.actividad) invalidDateCount++;
-                        return false;
-                    }).map((item, index) => ({ ...item, id: `${Date.now()}-${index}` }));
-                    const existingKeys = new Set(localEvents.map(ev => `${ev.fecha}|${ev.hora}|${ev.actividad}`));
-                    const uniqueNewEvents = validEvents.filter(ev => !existingKeys.has(`${ev.fecha}|${ev.hora}|${ev.actividad}`));
-                    if (uniqueNewEvents.length > 0) { setLocalEvents(prev => [...prev, ...uniqueNewEvents]); setHasChanges(true); }
-                    let successMsg = `Proceso completado. ${uniqueNewEvents.length} evento(s) nuevo(s) listo(s) para guardar.`;
-                    if (validEvents.length - uniqueNewEvents.length > 0) successMsg += ` Se omitieron ${validEvents.length - uniqueNewEvents.length} duplicado(s).`;
-                    if (invalidDateCount > 0) successMsg += ` Se omitieron ${invalidDateCount} por formato inválido.`;
-                    setSuccess(successMsg);
+                    processAndMergeEvents(parsedData);
                 } catch (err) { setError(err instanceof Error ? `Fallo al procesar: ${err.message}` : 'Error desconocido.'); setFileName(null); }
                 finally { e.target.value = ''; }
             }, [localEvents]);
+            
+            const handleLoadFromGoogleSheet = async () => {
+                setError(null); setSuccess(null);
+                if (!googleSheetUrl) {
+                    setError('Por favor, ingrese la URL de la hoja de cálculo de Google.');
+                    return;
+                }
+                const idMatch = googleSheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+                if (!idMatch || !idMatch[1]) {
+                    setError('La URL no es válida. Asegúrese de que sea una URL de Google Sheets para compartir.');
+                    return;
+                }
+                const spreadsheetId = idMatch[1];
+                const gidMatch = googleSheetUrl.match(/gid=([0-9]+)/);
+                const gid = gidMatch ? gidMatch[1] : '0';
+
+                setIsLoadingSheet(true);
+                try {
+                    const response = await fetch(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`);
+                    if (!response.ok) {
+                        throw new Error('No se pudo cargar la hoja. Verifique que la URL es correcta y que la hoja está compartida como "Cualquier persona con el enlace".');
+                    }
+                    const csvText = await response.text();
+                    const parsedCsv = parseCsvText(csvText);
+                    processAndMergeEvents(parsedCsv);
+                } catch (err) {
+                    setError(err.message || 'Ocurrió un error al cargar los datos.');
+                } finally {
+                    setIsLoadingSheet(false);
+                }
+            };
 
             const handleDeleteEvent = (eventId) => { if (window.confirm('¿Seguro que desea eliminar este evento?')) { setLocalEvents(prev => prev.filter(e => e.id !== eventId)); setHasChanges(true); } };
             const handleSaveEvent = (eventData) => { setLocalEvents(prev => prev.some(e => e.id === eventData.id) ? prev.map(e => e.id === eventData.id ? eventData : e) : [...prev, eventData]); setHasChanges(true); setIsModalOpen(false); setEventToEdit(null); };
@@ -665,12 +778,50 @@
                     React.createElement("h2", { className: "text-2xl font-bold text-gray-800 border-b pb-2" }, "Configuración de Datos"),
                     error && React.createElement("div", { className: "bg-red-100 border-l-4 border-red-500 text-red-700 p-4", role: "alert" }, React.createElement("p", null, error)),
                     success && React.createElement("div", { className: "bg-green-100 border-l-4 border-green-500 text-green-700 p-4", role: "alert" }, React.createElement("p", null, success)),
-                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "1. Descargar Plantilla"), React.createElement("p", { className: "text-gray-600" }, "Descargue la plantilla de Excel para asegurarse de que los datos tengan el formato correcto."), React.createElement("button", { onClick: generateExcelTemplate, className: "inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Descargar Plantilla Excel")),
-                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "2. Subir Cronograma"), React.createElement("p", { className: "text-gray-600" }, "Una vez que haya llenado la plantilla, súbala aquí para añadir los eventos al cronograma existente."), React.createElement("div", { className: "p-4 border-2 border-dashed border-gray-300 rounded-lg text-center" }, React.createElement("label", { htmlFor: "file-upload", className: "cursor-pointer inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, React.createElement(UploadIcon, { className: "w-5 h-5" }), "Seleccionar Archivo Excel"), React.createElement("input", { id: "file-upload", type: "file", accept: ".xlsx, .xls", onChange: handleExcelUpload, className: "hidden" }), fileName && React.createElement("p", { className: "mt-2 text-sm text-gray-600" }, `Archivo seleccionado: ${fileName}`))),
-                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "3. Exportar Cronograma Actual"), React.createElement("p", { className: "text-gray-600" }, "Exporte todos los eventos cargados actualmente (incluyendo cambios no guardados) a un archivo de Excel."), React.createElement("button", { onClick: handleExportToExcel, className: "inline-flex items-center justify-center gap-2 px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Exportar a Excel")),
+                    
+                    React.createElement("div", { className: "space-y-4" }, React.createElement("h3", { className: "text-lg font-semibold" }, "Importar desde Excel"), React.createElement("p", { className: "text-gray-600 text-sm" }, "Descargue la plantilla, llénela y súbala aquí para añadir eventos."), React.createElement("div", { className: "flex flex-wrap gap-4 items-center" }, React.createElement("button", { onClick: generateExcelTemplate, className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Descargar Plantilla"), React.createElement("label", { htmlFor: "file-upload", className: "cursor-pointer inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, React.createElement(UploadIcon, { className: "w-5 h-5" }), "Subir Archivo Excel"), React.createElement("input", { id: "file-upload", type: "file", accept: ".xlsx, .xls", onChange: handleExcelUpload, className: "hidden" }), fileName && React.createElement("p", { className: "text-sm text-gray-600" }, `Archivo: ${fileName}`))),
+
                     React.createElement("div", { className: "space-y-4 pt-4 border-t" },
-                        React.createElement("h3", { className: "text-lg font-semibold" }, "4. Gestionar Eventos Individualmente"),
-                        React.createElement("p", { className: "text-gray-600" }, "Añada, modifique o elimine eventos uno por uno. Recuerde guardar los cambios al final."),
+                        React.createElement("h3", { className: "text-lg font-semibold" }, "Importar desde Google Sheets"),
+                        React.createElement("div", { className: "space-y-3" },
+                            React.createElement("div", { className: "p-4 bg-gray-50 rounded-lg border" },
+                                React.createElement("p", { className: "text-gray-700 font-medium" }, "Paso 1: Crear y llenar la plantilla"),
+                                React.createElement("p", { className: "text-sm text-gray-600 mt-1 mb-3" }, "Haga clic en el botón para crear una copia de nuestra plantilla en su cuenta de Google Drive y llénela con sus eventos."),
+                                React.createElement("button", {
+                                    onClick: () => window.open('https://docs.google.com/spreadsheets/d/1wZqG3f4g_0Kx5c8L1N6sTj3h2M4p5R7f9o_A1bC2d3E/copy', '_blank'),
+                                    className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                                }, React.createElement(GoogleSheetIcon, { className: "w-5 h-5" }), "Crear Plantilla en Google Sheets")
+                            ),
+                            React.createElement("div", { className: "p-4 bg-gray-50 rounded-lg border" },
+                                React.createElement("p", { className: "text-gray-700 font-medium" }, "Paso 2: Compartir y pegar el enlace"),
+                                React.createElement("p", { className: "text-sm text-gray-600 mt-1" }, "En su hoja de cálculo, haga clic en el botón ", React.createElement("strong", null, "Compartir"), " (arriba a la derecha). En 'Acceso general', cambie la configuración a ", React.createElement("strong", null, "'Cualquier persona con el enlace'"), ". Luego, copie el enlace y péguelo a continuación."),
+                                React.createElement("div", { className: "mt-3" }, 
+                                    React.createElement("label", { htmlFor: "gSheetUrl", className: "sr-only" }, "URL de Google Sheet pública"),
+                                    React.createElement("input", {
+                                        id: "gSheetUrl", type: "url", value: googleSheetUrl,
+                                        onChange: (e) => setGoogleSheetUrl(e.target.value),
+                                        placeholder: "Pegue el enlace para compartir aquí...",
+                                        className: "block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    })
+                                )
+                            ),
+                            React.createElement("div", { className: "pt-2" },
+                                React.createElement("button", {
+                                    onClick: handleLoadFromGoogleSheet, disabled: isLoadingSheet,
+                                    className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300"
+                                },
+                                React.createElement(UploadIcon, { className: "w-5 h-5" }),
+                                isLoadingSheet ? 'Cargando...' : 'Cargar desde Google Sheets'
+                                )
+                            )
+                        )
+                    ),
+                    
+                    React.createElement("div", { className: "space-y-4 pt-4 border-t" }, React.createElement("h3", { className: "text-lg font-semibold" }, "Exportar Cronograma Actual"), React.createElement("p", { className: "text-gray-600 text-sm" }, "Exporte todos los eventos cargados actualmente (incluyendo cambios no guardados) a un archivo de Excel."), React.createElement("button", { onClick: handleExportToExcel, className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700" }, React.createElement(DownloadIcon, { className: "w-5 h-5" }), "Exportar a Excel")),
+                    
+                    React.createElement("div", { className: "space-y-4 pt-4 border-t" },
+                        React.createElement("h3", { className: "text-lg font-semibold" }, "Gestionar Eventos Individualmente"),
+                        React.createElement("p", { className: "text-gray-600 text-sm" }, "Añada, modifique o elimine eventos uno por uno. Recuerde guardar los cambios al final."),
                         React.createElement("button", { onClick: () => { setEventToEdit(null); setIsModalOpen(true); }, className: "inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700" }, "Crear Nuevo Evento"),
                         React.createElement("div", { className: "mt-4" }, React.createElement("h4", { className: "font-semibold text-gray-700 mb-2" }, `Lista de Eventos (${localEvents.length})`),
                             React.createElement("div", { className: "space-y-2 max-h-[500px] overflow-y-auto pr-2 bg-gray-50 p-2 rounded-lg" },

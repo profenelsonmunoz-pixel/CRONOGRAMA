@@ -3,7 +3,7 @@ import { ScheduleEvent } from '../types';
 import { formatDate } from '../services/dateUtils';
 import EventCard from './EventCard';
 import Calendar from './Calendar';
-import { CalendarIcon as DayHeaderIcon } from './Icons';
+import { CalendarIcon as DayHeaderIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons';
 
 interface ScheduleViewProps {
   events: ScheduleEvent[];
@@ -108,6 +108,20 @@ const ScheduleView: React.FC<ScheduleViewProps> = ({ events }) => {
     setFilter('day');
     setIsCalendarOpen(false); // Close calendar on selection
   };
+
+  const handleNavigation = (direction: 'prev' | 'next') => {
+    const newDate = new Date(selectedDate);
+    const offset = direction === 'next' ? 1 : -1;
+
+    if (filter === 'day') {
+      newDate.setUTCDate(newDate.getUTCDate() + offset);
+    } else if (filter === 'week') {
+      newDate.setUTCDate(newDate.getUTCDate() + (offset * 7));
+    } else if (filter === 'month') {
+      newDate.setUTCFullYear(newDate.getUTCFullYear() + offset);
+    }
+    setSelectedDate(newDate);
+  };
   
   const FilterButton: React.FC<{
     label: string;
@@ -142,10 +156,30 @@ const ScheduleView: React.FC<ScheduleViewProps> = ({ events }) => {
                 <DayHeaderIcon className="w-6 h-6 text-blue-700"/>
               </button>
             </div>
-            <div className="flex items-center gap-2 no-print">
-              <FilterButton label="Día" view="day" />
-              <FilterButton label="Semana" view="week" />
-              <FilterButton label="Mes" view="month" />
+            <div className="flex flex-col items-end sm:flex-row sm:items-center gap-2 no-print">
+                {(filter === 'day' || filter === 'week' || filter === 'month') && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleNavigation('prev')}
+                      className="p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                      aria-label={filter === 'day' ? 'Día anterior' : filter === 'week' ? 'Semana anterior' : 'Año anterior'}
+                    >
+                      <ChevronLeftIcon className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleNavigation('next')}
+                      className="p-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                      aria-label={filter === 'day' ? 'Día siguiente' : filter === 'week' ? 'Semana siguiente' : 'Año siguiente'}
+                    >
+                      <ChevronRightIcon className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <FilterButton label="Día" view="day" />
+                  <FilterButton label="Semana" view="week" />
+                  <FilterButton label="Mes" view="month" />
+                </div>
             </div>
           </div>
           <p className="text-gray-600">
