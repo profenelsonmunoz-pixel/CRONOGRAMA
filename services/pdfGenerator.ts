@@ -6,10 +6,13 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { ScheduleEvent } from '../types';
 
-// Extend the jsPDF type to include autoTable
-interface jsPDFWithAutoTable extends jsPDF {
+// FIX: Changed interface to a type intersection.
+// The `interface jsPDFWithAutoTable extends jsPDF` declaration was not correctly inheriting
+// the methods from the base jsPDF class type. Using a type intersection ensures
+// that all original jsPDF methods are preserved while adding the `autoTable` method.
+type jsPDFWithAutoTable = jsPDF & {
   autoTable: (options: any) => jsPDF;
-}
+};
 
 export const generatePdf = (title: string, events: ScheduleEvent[], selectedColumns: (keyof ScheduleEvent)[]) => {
   const doc = new jsPDF() as jsPDFWithAutoTable;
